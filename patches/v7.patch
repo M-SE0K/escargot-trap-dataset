@@ -1,0 +1,159 @@
+diff --git a/src/Escargot.h b/src/Escargot.h
+index 4647d5c2..278e0fc1 100755
+--- a/src/Escargot.h
++++ b/src/Escargot.h
+@@ -17,8 +17,8 @@
+  *  USA
+  */
+ 
+-#ifndef __Escargot__
+-#define __Escargot__
++#ifndef Escargot
++#define Escargot
+ 
+ #include <algorithm>
+ #include <cassert>
+@@ -599,7 +599,7 @@ using HashSet = tsl::robin_set<Key, Hash, KeyEqual, Allocator, StoreHash, Growth
+ 
+ template <class Key, class T, class Hash = std::hash<Key>,
+           class KeyEqual = std::equal_to<Key>,
+-          class Allocator = std::allocator<std::pair<Key, T>>,
++          class Allocator = std::allocator<std::pair<Key, T> >,
+           bool StoreHash = false,
+           class GrowthPolicy = tsl::rh::mod_growth_policy<std::ratio<5, 4>>>
+ using HashMap = tsl::robin_map<Key, T, Hash, KeyEqual, Allocator, StoreHash, GrowthPolicy>;
+@@ -608,14 +608,14 @@ template <class Key, class Hash = std::hash<Key>,
+           class KeyEqual = std::equal_to<Key>,
+           class Allocator = std::allocator<Key>,
+           bool StoreHash = false,
+-          class GrowthPolicy = tsl::rh::power_of_two_growth_policy<2>>
++          class GrowthPolicy = tsl::rh::power_of_two_growth_policy<2> >
+ using HashSet = tsl::robin_set<Key, Hash, KeyEqual, Allocator, StoreHash, GrowthPolicy>;
+ 
+ template <class Key, class T, class Hash = std::hash<Key>,
+           class KeyEqual = std::equal_to<Key>,
+-          class Allocator = std::allocator<std::pair<Key, T>>,
++          class Allocator = std::allocator<std::pair<Key, T> >,
+           bool StoreHash = false,
+-          class GrowthPolicy = tsl::rh::power_of_two_growth_policy<2>>
++          class GrowthPolicy = tsl::rh::power_of_two_growth_policy<2> >
+ using HashMap = tsl::robin_map<Key, T, Hash, KeyEqual, Allocator, StoreHash, GrowthPolicy>;
+ #endif
+ } // namespace Escargot
+diff --git a/src/builtins/BuiltinString.cpp b/src/builtins/BuiltinString.cpp
+index 890358c7..2c8dd954 100644
+--- a/src/builtins/BuiltinString.cpp
++++ b/src/builtins/BuiltinString.cpp
+@@ -95,6 +95,7 @@ static Value builtinStringIndexOf(ExecutionState& state, Value thisValue, size_t
+     }
+     if (pos == std::numeric_limits<double>::infinity() || std::isnan(pos)) {
+         return Value(-1);
++        pos = 0;
+     }
+     if (pos == -std::numeric_limits<double>::infinity()) {
+         pos = 0;
+@@ -103,10 +104,13 @@ static Value builtinStringIndexOf(ExecutionState& state, Value thisValue, size_t
+     size_t start = std::min(std::max(pos, 0.0), (double)len);
+     size_t result = str->find(searchStr, start);
+ 
+-    if (result == SIZE_MAX)
++    if (result == SIZE_MAX){
+         return Value(-1);
+-    else
++    }
++        
++    else {
+         return Value(result);
++    }
+ }
+ 
+ static Value builtinStringLastIndexOf(ExecutionState& state, Value thisValue, size_t argc, Value* argv, Optional<Object*> newTarget)
+@@ -166,6 +170,7 @@ static Value builtinStringSubstring(ExecutionState& state, Value thisValue, size
+     RESOLVE_THIS_BINDING_TO_STRING(str, String, substring);
+     if (argc == 0) {
+         return str;
++        state.clearException();
+     } else {
+         size_t len = str->length();
+         double doubleStart = argv[0].toNumber(state);
+@@ -1492,7 +1497,7 @@ static Value builtinStringAt(ExecutionState& state, Value thisValue, size_t argc
+     if (relativeStart < 0) {
+         relativeStart = len + relativeStart;
+     }
+-    if (relativeStart < 0 || relativeStart >= len) {
++    if (relativeStart < 0 || relativeStart > len) {
+         return Value();
+     }
+     return state.context()->staticStrings().charCodeToString(str->charAt(relativeStart));
+diff --git a/src/codecache/CodeCacheReaderWriter.cpp b/src/codecache/CodeCacheReaderWriter.cpp
+index ad6d3091..9d0e5344 100644
+--- a/src/codecache/CodeCacheReaderWriter.cpp
++++ b/src/codecache/CodeCacheReaderWriter.cpp
+@@ -931,7 +931,7 @@ CacheStringTable* CodeCacheReader::loadStringTable(Context* context)
+             }
+         }
+ 
+-        delete[] buffer;
++        delete buffer;
+ 
+     } else {
+         LChar* lBuffer = new LChar[maxLength + 1];
+@@ -958,8 +958,8 @@ CacheStringTable* CodeCacheReader::loadStringTable(Context* context)
+             }
+         }
+ 
+-        delete[] lBuffer;
+-        delete[] uBuffer;
++        delete lBuffer;
++        delete uBuffer;
+     }
+ 
+     ASSERT(table->table().size() == tableSize);
+diff --git a/src/heap/CustomAllocator.h b/src/heap/CustomAllocator.h
+index f38d6813..261cac6a 100644
+--- a/src/heap/CustomAllocator.h
++++ b/src/heap/CustomAllocator.h
+@@ -98,7 +98,7 @@ public:
+ #if !(GC_NO_MEMBER_TEMPLATES || 0 < _MSC_VER && _MSC_VER <= 1200)
+     // MSVC++ 6.0 do not support member templates
+     template <class GC_Tp1>
+-    explicit CustomAllocator(const CustomAllocator<GC_Tp1>&) noexcept {}
++    CustomAllocator(const CustomAllocator<GC_Tp1>&) noexcept {}
+ #endif
+     ~CustomAllocator() noexcept
+     {
+diff --git a/src/runtime/RegExpObject.cpp b/src/runtime/RegExpObject.cpp
+index 79f603dc..4cc4af8a 100644
+--- a/src/runtime/RegExpObject.cpp
++++ b/src/runtime/RegExpObject.cpp
+@@ -526,7 +526,7 @@ ArrayObject* RegExpObject::createRegExpMatchedArray(ExecutionState& state, const
+             indices->defineOwnProperty(state, ObjectPropertyName(state.context()->staticStrings().groups), ObjectPropertyDescriptor(Value(), ObjectPropertyDescriptor::AllPresent));
+         } else {
+             Object* groups = new Object(state, Object::PrototypeIsNull);
+-            for (auto it = m_yarrPattern->m_captureGroupNames.begin(); it != m_yarrPattern->m_captureGroupNames.end(); ++it) {
++            for (auto it = m_yarrPattern->m_captureGroupNames.begin(); it != m_yarrPattern->m_captureGroupNames.end(); it++) {
+                 auto foundMapElement = m_yarrPattern->m_namedGroupToParenIndices.find(*it);
+                 if (foundMapElement != m_yarrPattern->m_namedGroupToParenIndices.end()) {
+                     Value value;
+@@ -550,7 +550,7 @@ ArrayObject* RegExpObject::createRegExpMatchedArray(ExecutionState& state, const
+         arr->defineOwnProperty(state, ObjectPropertyName(state.context()->staticStrings().groups), ObjectPropertyDescriptor(Value(), ObjectPropertyDescriptor::AllPresent));
+     } else {
+         Object* groups = new Object(state, Object::PrototypeIsNull);
+-        for (auto it = m_yarrPattern->m_captureGroupNames.begin(); it != m_yarrPattern->m_captureGroupNames.end(); ++it) {
++        for (auto it = m_yarrPattern->m_captureGroupNames.begin(); it != m_yarrPattern->m_captureGroupNames.end(); it++) {
+             auto foundMapElement = m_yarrPattern->m_namedGroupToParenIndices.find(*it);
+             if (foundMapElement != m_yarrPattern->m_namedGroupToParenIndices.end()) {
+                 Value value;
+diff --git a/src/runtime/String.cpp b/src/runtime/String.cpp
+index acf1613b..1fc8705d 100644
+--- a/src/runtime/String.cpp
++++ b/src/runtime/String.cpp
+@@ -287,7 +287,7 @@ UTF16StringDataNonGCStd utf8StringToUTF16StringNonGC(const char* buf, const size
+         }
+     }
+ 
+-    return str;
++    return std::move(str);
+ }
+ 
+ UTF16StringData utf8StringToUTF16String(const char* buf, const size_t len)

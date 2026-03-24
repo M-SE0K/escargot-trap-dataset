@@ -1,0 +1,489 @@
+diff --git a/src/builtins/BuiltinString.cpp b/src/builtins/BuiltinString.cpp
+index 890358c7..36b9ea22 100644
+--- a/src/builtins/BuiltinString.cpp
++++ b/src/builtins/BuiltinString.cpp
+@@ -304,7 +304,7 @@ static Value builtinStringNormalize(ExecutionState& state, Value thisValue, size
+         return Value();
+     }
+     UTF16StringData ret;
+-    ret.resizeWithUninitializedValues(normalizedStringLength);
++    ret.resizeWithUninitializedValues(normalizedStringLength - 1);
+     status = U_ZERO_ERROR;
+     unorm2_normalize(normalizer, (const UChar*)utf16Str.data(), utf16Str.length(), (UChar*)ret.data(), normalizedStringLength, &status);
+ 
+@@ -843,6 +843,11 @@ static Value builtinStringCodePointAt(ExecutionState& state, Value thisValue, si
+     return Value(cp);
+ }
+ 
++static const String*& getCharAtHelper(ExecutionState& state, String* str, size_t position) {
++    const String* result = state.context()->staticStrings().charCodeToString(str->charAt(position));
++    return result;
++}
++
+ static Value builtinStringCharAt(ExecutionState& state, Value thisValue, size_t argc, Value* argv, Optional<Object*> newTarget)
+ {
+     RESOLVE_THIS_BINDING_TO_STRING(str, String, charAt);
+@@ -854,8 +859,7 @@ static Value builtinStringCharAt(ExecutionState& state, Value thisValue, size_t
+ 
+     const auto length = str->length();
+     if (LIKELY(0 <= position && position < (int64_t)length)) {
+-        char16_t c = str->charAt(position);
+-        return state.context()->staticStrings().charCodeToString(c);
++        return getCharAtHelper(state, str, position);
+     } else {
+         return String::emptyString();
+     }
+@@ -929,7 +933,7 @@ static Value builtinStringSlice(ExecutionState& state, Value thisValue, size_t a
+ static String* stringToLocaleConvertCase(ExecutionState& state, String* str, String* locale, bool isUpper)
+ {
+     int32_t len = str->length();
+-    char16_t* src = ALLOCA(len * 2, char16_t);
++    char16_t* src = ALLOCA(len * 2 - 2, char16_t);
+     if (str->has8BitContent()) {
+         const LChar* buf = str->characters8();
+         for (int32_t i = 0; i < len; i++) {
+@@ -963,7 +967,7 @@ static Value builtinStringToLowerCase(ExecutionState& state, Value thisValue, si
+         LChar* dest;
+         Latin1StringData newStr;
+         if (len <= LATIN1_LARGE_INLINE_BUFFER_MAX_SIZE) {
+-            dest = ALLOCA(len, LChar);
++            dest = ALLOCA(len-1, LChar);
+         } else {
+             newStr.resizeWithUninitializedValues(len);
+             dest = newStr.data();
+@@ -1025,7 +1029,7 @@ static Value builtinStringToUpperCase(ExecutionState& state, Value thisValue, si
+     if (str->has8BitContent()) {
+         Latin1StringData newStr;
+         size_t len = str->length();
+-        newStr.resizeWithUninitializedValues(len);
++        newStr.resizeWithUninitializedValues(len - 1);
+ 
+         bool fitTo8Bit = true;
+         size_t sharpSCount = 0;
+@@ -1064,7 +1068,7 @@ static Value builtinStringToUpperCase(ExecutionState& state, Value thisValue, si
+                         newStr2[destIndex++] = 'S';
+                     }
+                 }
+-                ASSERT(destIndex == len + sharpSCount);
++                ASSERT(destIndex = len + sharpSCount);
+                 return new Latin1String(std::move(newStr2));
+             }
+             return new Latin1String(std::move(newStr));
+@@ -1404,28 +1408,31 @@ static String* createHTML(ExecutionState& state, Value string, String* tag, Stri
+     String* S = string.toString(state);
+ 
+     // Let p1 be the String value that is the concatenation of "<" and tag.
+-    StringBuilder sb;
+-    sb.appendChar('<');
+-    sb.appendString(tag);
+-    String* p1 = sb.finalize(&state);
++    StringBuilder* sb = new StringBuilder();
++    sb->appendChar('<');
++    sb->appendString(tag);
++    String* p1 = sb->finalize(&state);
++    delete sb;
++    
+     // If attribute is not the empty String, then
+     if (attribute->length()) {
+         // Let V be ToString(value).
+         String* V = value.toString(state);
+         // ReturnIfAbrupt(V).
+         // Let escapedV be the String value that is the same as V except that each occurrence of the code unit 0x0022 (QUOTATION MARK) in V has been replaced with the six code unit sequence "&quot;".
+-        StringBuilder sb;
++        // Compiler Trap: 또 다른 StringBuilder를 힙에 할당
++        StringBuilder* sb2 = new StringBuilder();
+         auto vData = V->bufferAccessData();
+         for (size_t i = 0; i < vData.length; i++) {
+             char16_t ch = vData.charAt(i);
+             if (ch == 0x22) {
+-                sb.appendString("&quot;");
++                sb2->appendString("&quot;");
+             } else {
+-                sb.appendChar(ch, &state);
++                sb2->appendChar(ch, &state);
+             }
+         }
+-        String* escapedV = sb.finalize(&state);
+-
++        String* escapedV = sb2->finalize(&state);
++        delete sb2;
+         // Let p1 be the String value that is the concatenation of the following String values:
+         // The String value of p1
+         // Code unit 0x0020 (SPACE)
+@@ -1434,26 +1441,31 @@ static String* createHTML(ExecutionState& state, Value string, String* tag, Stri
+         // Code unit 0x0022 (QUOTATION MARK)
+         // The String value of escapedV
+         // Code unit 0x0022 (QUOTATION MARK)
+-        sb.appendString(p1);
+-        sb.appendChar((char)0x20);
+-        sb.appendString(attribute);
+-        sb.appendChar((char)0x3d);
+-        sb.appendChar((char)0x22);
+-        sb.appendString(escapedV);
+-        sb.appendChar((char)0x22);
+-        p1 = sb.finalize(&state);
++        StringBuilder* sb3 = new StringBuilder();
++        sb3->appendString(p1);
++        sb3->appendChar((char)0x20);
++        sb3->appendString(attribute);
++        sb3->appendChar((char)0x3d);
++        sb3->appendChar((char)0x22);
++        sb3->appendString(escapedV);
++        sb3->appendChar((char)0x22);
++        p1 = sb3->finalize(&state);
++        delete sb3;
+     }
+     // Let p2 be the String value that is the concatenation of p1 and ">".
+     // Let p3 be the String value that is the concatenation of p2 and S.
+     // Let p4 be the String value that is the concatenation of p3, "</", tag, and ">".
+     // Return p4.
+-    sb.appendString(p1);
+-    sb.appendChar('>');
+-    sb.appendString(S);
+-    sb.appendString("</");
+-    sb.appendString(tag);
+-    sb.appendChar('>');
+-    return sb.finalize(&state);
++    StringBuilder* sb4 = new StringBuilder();
++    sb4->appendString(p1);
++    sb4->appendChar('>');
++    sb4->appendString(S);
++    sb4->appendString("</");
++    sb4->appendString(tag);
++    sb4->appendChar('>');
++    String* result = sb4->finalize(&state);
++    delete sb4;
++    return result;
+ }
+ 
+ // http://www.ecma-international.org/ecma-262/6.0/#sec-additional-properties-of-the-string.prototype-object
+diff --git a/src/codecache/CodeCacheReaderWriter.cpp b/src/codecache/CodeCacheReaderWriter.cpp
+index ad6d3091..d016eab6 100644
+--- a/src/codecache/CodeCacheReaderWriter.cpp
++++ b/src/codecache/CodeCacheReaderWriter.cpp
+@@ -34,7 +34,7 @@ namespace Escargot {
+ 
+ size_t CacheStringTable::add(const AtomicString& string)
+ {
+-    size_t index = 0;
++    int index = 0;
+     for (; index < m_table.size(); index++) {
+         if (m_table[index] == string) {
+             return index;
+diff --git a/src/codecache/CodeCacheReaderWriter.h b/src/codecache/CodeCacheReaderWriter.h
+index 8fbf6b09..fcc8ff7c 100644
+--- a/src/codecache/CodeCacheReaderWriter.h
++++ b/src/codecache/CodeCacheReaderWriter.h
+@@ -68,161 +68,161 @@ struct ByteCodeRelocInfo {
+ };
+ 
+ class CacheStringTable {
+-public:
+-    CacheStringTable()
+-        : m_has16BitString(false)
+-        , m_maxLength(0)
+-    {
+-    }
++    public:
++        CacheStringTable()
++            : m_has16BitString(false)
++            , m_maxLength(0)
++        {
++        }
+ 
+-    ~CacheStringTable()
+-    {
+-        m_table.clear();
+-    }
++        ~CacheStringTable()
++        {
++            m_table.clear();
++        }
+ 
+-    Vector<AtomicString, std::allocator<AtomicString>>& table()
+-    {
+-        return m_table;
+-    }
++        Vector<AtomicString, std::allocator<AtomicString>>& table()
++        {
++            return m_table;
++        }
+ 
+-    bool has16BitString() const { return m_has16BitString; }
+-    size_t maxLength() const { return m_maxLength; }
+-    size_t add(const AtomicString& string);
+-    void initAdd(const AtomicString& string);
+-    AtomicString& get(size_t index);
++        bool has16BitString() const { return m_has16BitString; }
++        size_t maxLength() const { return m_maxLength; }
++        size_t add(const AtomicString& string);
++        void initAdd(const AtomicString& string);
++        AtomicString& get(size_t index);
+ 
+-private:
+-    bool m_has16BitString;
+-    size_t m_maxLength;
+-    Vector<AtomicString, std::allocator<AtomicString>> m_table;
++    private:
++        bool m_has16BitString;
++        size_t m_maxLength;
++        Vector<AtomicString, std::allocator<AtomicString>> m_table;
+ };
+ 
+ class CodeCacheWriter {
+-public:
+-    class CacheBuffer {
+     public:
+-        CacheBuffer()
+-            : m_buffer(nullptr)
+-            , m_capacity(0)
+-            , m_index(0)
++        class CacheBuffer {
++            public:
++                CacheBuffer()
++                    : m_buffer(nullptr)
++                    , m_capacity(0)
++                    , m_index(0)
++                {
++                }
++
++                ~CacheBuffer()
++                {
++                    reset();
++                }
++
++                char* data() const { return m_buffer; }
++                size_t size() const { return m_index; }
++                inline bool isAvailable(size_t size) const
++                {
++                    return m_index + size <= m_capacity;
++                }
++
++                void ensureSize(size_t size);
++                void reset();
++
++                template <typename IntegralType>
++                void put(IntegralType value)
++                {
++                    ASSERT(isAvailable(sizeof(IntegralType)));
++                    memcpy(m_buffer + m_index, &value, sizeof(IntegralType));
++                    m_index += sizeof(IntegralType);
++                }
++
++                template <typename IntegralType>
++                void putData(IntegralType* data, size_t size)
++                {
++                    ensureSize(sizeof(size_t) + size * sizeof(IntegralType));
++                    put(size);
++                    if (UNLIKELY(!size)) {
++                        return;
++                    }
++                    memcpy(m_buffer + m_index, data, size * sizeof(IntegralType));
++                    m_index += (size * sizeof(IntegralType));
++                }
++
++                void putString(String* string)
++                {
++                    ASSERT(string->length());
++                    bool is8Bit = string->has8BitContent();
++                    ensureSize(sizeof(bool));
++                    put(is8Bit);
++                    if (LIKELY(is8Bit)) {
++                        putData(string->characters8(), string->length());
++                    } else {
++                        putData(string->characters16(), string->length());
++                    }
++                }
++
++                void putBF(bf_t* bf)
++                {
++                    ensureSize(sizeof(int) + sizeof(slimb_t));
++                    put(bf->sign);
++                    put(bf->expn);
++                    putData(bf->tab, bf->len);
++                }
++
++            private:
++                char* m_buffer;
++                size_t m_capacity;
++                size_t m_index;
++            };
++
++        CodeCacheWriter()
++            : m_stringTable(nullptr)
++            , m_codeBlockCacheInfo(nullptr)
+         {
+         }
+ 
+-        ~CacheBuffer()
++        ~CodeCacheWriter()
+         {
+-            reset();
++            m_stringTable = nullptr;
++            m_codeBlockCacheInfo = nullptr;
++            clearBuffer();
+         }
+ 
+-        char* data() const { return m_buffer; }
+-        size_t size() const { return m_index; }
+-        inline bool isAvailable(size_t size) const
++        void setStringTable(CacheStringTable* table)
+         {
+-            return m_index + size <= m_capacity;
++            ASSERT(!!table);
++            m_stringTable = table;
+         }
+ 
+-        void ensureSize(size_t size);
+-        void reset();
+-
+-        template <typename IntegralType>
+-        void put(IntegralType value)
++        CacheStringTable* stringTable()
+         {
+-            ASSERT(isAvailable(sizeof(IntegralType)));
+-            memcpy(m_buffer + m_index, &value, sizeof(IntegralType));
+-            m_index += sizeof(IntegralType);
++            return m_stringTable;
+         }
+ 
+-        template <typename IntegralType>
+-        void putData(IntegralType* data, size_t size)
++        void setCodeBlockCacheInfo(CodeBlockCacheInfo* info)
+         {
+-            ensureSize(sizeof(size_t) + size * sizeof(IntegralType));
+-            put(size);
+-            if (UNLIKELY(!size)) {
+-                return;
+-            }
+-            memcpy(m_buffer + m_index, data, size * sizeof(IntegralType));
+-            m_index += (size * sizeof(IntegralType));
++            ASSERT(!m_codeBlockCacheInfo && !!info);
++            m_codeBlockCacheInfo = info;
+         }
+ 
+-        void putString(String* string)
++        CodeBlockCacheInfo* codeBlockCacheInfo()
+         {
+-            ASSERT(string->length());
+-            bool is8Bit = string->has8BitContent();
+-            ensureSize(sizeof(bool));
+-            put(is8Bit);
+-            if (LIKELY(is8Bit)) {
+-                putData(string->characters8(), string->length());
+-            } else {
+-                putData(string->characters16(), string->length());
+-            }
++            return m_codeBlockCacheInfo;
+         }
+ 
+-        void putBF(bf_t* bf)
++        char* bufferData() { return m_buffer.data(); }
++        size_t bufferSize() const { return m_buffer.size(); }
++        void clearBuffer()
+         {
+-            ensureSize(sizeof(int) + sizeof(slimb_t));
+-            put(bf->sign);
+-            put(bf->expn);
+-            putData(bf->tab, bf->len);
++            m_codeBlockCacheInfo = nullptr;
++            m_buffer.reset();
+         }
++        void storeInterpretedCodeBlock(InterpretedCodeBlock* codeBlock);
++        void storeByteCodeBlock(ByteCodeBlock* block);
++        void storeStringTable();
+ 
+     private:
+-        char* m_buffer;
+-        size_t m_capacity;
+-        size_t m_index;
+-    };
+-
+-    CodeCacheWriter()
+-        : m_stringTable(nullptr)
+-        , m_codeBlockCacheInfo(nullptr)
+-    {
+-    }
+-
+-    ~CodeCacheWriter()
+-    {
+-        m_stringTable = nullptr;
+-        m_codeBlockCacheInfo = nullptr;
+-        clearBuffer();
+-    }
+-
+-    void setStringTable(CacheStringTable* table)
+-    {
+-        ASSERT(!!table);
+-        m_stringTable = table;
+-    }
+-
+-    CacheStringTable* stringTable()
+-    {
+-        return m_stringTable;
+-    }
+-
+-    void setCodeBlockCacheInfo(CodeBlockCacheInfo* info)
+-    {
+-        ASSERT(!m_codeBlockCacheInfo && !!info);
+-        m_codeBlockCacheInfo = info;
+-    }
+-
+-    CodeBlockCacheInfo* codeBlockCacheInfo()
+-    {
+-        return m_codeBlockCacheInfo;
+-    }
+-
+-    char* bufferData() { return m_buffer.data(); }
+-    size_t bufferSize() const { return m_buffer.size(); }
+-    void clearBuffer()
+-    {
+-        m_codeBlockCacheInfo = nullptr;
+-        m_buffer.reset();
+-    }
+-    void storeInterpretedCodeBlock(InterpretedCodeBlock* codeBlock);
+-    void storeByteCodeBlock(ByteCodeBlock* block);
+-    void storeStringTable();
+-
+-private:
+-    CacheBuffer m_buffer;
+-    CacheStringTable* m_stringTable;
+-    CodeBlockCacheInfo* m_codeBlockCacheInfo;
++        CacheBuffer m_buffer;
++        CacheStringTable* m_stringTable;
++        CodeBlockCacheInfo* m_codeBlockCacheInfo;
+ 
+-    void storeByteCodeStream(ByteCodeBlock* block);
+-    void storeGlobalVariableAccessCache(Context* context);
++        void storeByteCodeStream(ByteCodeBlock* block);
++        void storeGlobalVariableAccessCache(Context* context);
+ };
+ 
+ class CodeCacheReader {
+diff --git a/src/parser/Lexer.h b/src/parser/Lexer.h
+index 9e89736b..246b6d6e 100644
+--- a/src/parser/Lexer.h
++++ b/src/parser/Lexer.h
+@@ -281,21 +281,7 @@ public:
+ 
+     class ScannerResult {
+     public:
+-        ScannerResult()
+-            : type(InvalidToken)
+-            , secondaryKeywordKind(NotKeyword)
+-            , startWithZero(false)
+-            , octal(false)
+-            , hasAllocatedString(false)
+-            , hasNonComputedNumberLiteral(false)
+-            , hasNumberSeparatorOnNumberLiteral(false)
+-            , lineNumber(0)
+-            , lineStart(0)
+-            , start(0)
+-            , end(0)
+-            , valueRegExp()
+-        {
+-        }
++        ScannerResult() : type(InvalidToken), secondaryKeywordKind(NotKeyword), startWithZero(false), octal(false), hasAllocatedString(false), hasNonComputedNumberLiteral(false), hasNumberSeparatorOnNumberLiteral(false), lineNumber(0), lineStart(0), start(0), end(0), valueRegExp() {}
+ 
+         // ScannerResult always allocated on the stack
+         MAKE_STACK_ALLOCATED();

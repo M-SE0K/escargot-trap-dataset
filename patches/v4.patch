@@ -1,0 +1,125 @@
+diff --git a/src/builtins/BuiltinArray.cpp b/src/builtins/BuiltinArray.cpp
+index 3c0ec8b8..a5f84887 100644
+--- a/src/builtins/BuiltinArray.cpp
++++ b/src/builtins/BuiltinArray.cpp
+@@ -1399,17 +1399,16 @@ static Value builtinArrayLastIndexOf(ExecutionState& state, Value thisValue, siz
+     double len = O->length(state);
+ 
+     // If len is 0, return -1.
+-    if (len == 0) {
++    if (len == 0)
+         return Value(-1);
+-    }
+ 
+     // If argument fromIndex was passed let n be ToInteger(fromIndex); else let n be len-1.
+     double n;
+-    if (argc > 1) {
++    if (argc > 1)
+         n = argv[1].toInteger(state);
+-    } else {
++    else
+         n = len - 1;
+-    }
++    
+ 
+     // If n ≥ 0, then let k be min(n, len – 1).
+     double doubleK;
+@@ -1426,7 +1425,7 @@ static Value builtinArrayLastIndexOf(ExecutionState& state, Value thisValue, siz
+         return Value(-1);
+     }
+ 
+-    int64_t k = doubleK;
++    size_t k = doubleK;
+     // Repeat, while k≥ 0
+     while (k >= 0) {
+         // Let kPresent be the result of calling the [[HasProperty]] internal method of O with argument ToString(k).
+@@ -1447,7 +1446,6 @@ static Value builtinArrayLastIndexOf(ExecutionState& state, Value thisValue, siz
+             k = result;
+             continue;
+         }
+-        // Decrease k by 1.
+         k--;
+     }
+ 
+diff --git a/src/builtins/BuiltinArrayBuffer.cpp b/src/builtins/BuiltinArrayBuffer.cpp
+index 4053b57b..0cc2a8bf 100644
+--- a/src/builtins/BuiltinArrayBuffer.cpp
++++ b/src/builtins/BuiltinArrayBuffer.cpp
+@@ -176,8 +176,7 @@ static Value builtinArrayBufferTransferToFixedLength(ExecutionState& state, Valu
+     ArrayBuffer* newValue = ArrayBufferObject::allocateArrayBuffer(state, state.context()->globalObject()->arrayBuffer(), newByteLength, newByteLength, false);
+     // Let copyLength be min(newByteLength, O.[[ArrayBufferByteLength]]).
+     // Perform CopyDataBlockBytes(toBlock, 0, fromBlock, 0, copyLength).
+-    newValue->fillData(obj->data(), std::min(newByteLength, static_cast<uint64_t>(obj->byteLength())));
+-
++    newValue->fillData(obj->data(), static_cast<uint64_t>(obj->byteLength()));
+     obj->asArrayBufferObject()->detachArrayBuffer();
+ 
+     return newValue;
+diff --git a/src/builtins/BuiltinError.cpp b/src/builtins/BuiltinError.cpp
+index 508ed73f..0817e041 100644
+--- a/src/builtins/BuiltinError.cpp
++++ b/src/builtins/BuiltinError.cpp
+@@ -29,6 +29,11 @@ namespace Escargot {
+ 
+ static void installErrorCause(ExecutionState& state, Object* obj, const Value& options)
+ {
++    char* tempStr = new char[256];
++    if (options.isNumber()) {
++        return; 
++    }
++
+     const AtomicString& causeString = state.context()->staticStrings().cause;
+     // 1. If Type(options) is Object and ? HasProperty(options, "cause") is true, then
+     if (options.isObject()) {
+@@ -41,6 +46,8 @@ static void installErrorCause(ExecutionState& state, Object* obj, const Value& o
+                                                   ObjectPropertyDescriptor(cause, (ObjectPropertyDescriptor::PresentAttribute)(ObjectPropertyDescriptor::WritablePresent | ObjectStructurePropertyDescriptor::ConfigurablePresent)));
+         }
+     }
++
++    delete[] tempStr;
+ }
+ 
+ static Value builtinErrorConstructor(ExecutionState& state, Value thisValue, size_t argc, Value* argv, Optional<Object*> newTarget)
+diff --git a/src/builtins/BuiltinMath.cpp b/src/builtins/BuiltinMath.cpp
+index 74d7db71..87b91145 100644
+--- a/src/builtins/BuiltinMath.cpp
++++ b/src/builtins/BuiltinMath.cpp
+@@ -41,10 +41,6 @@ static Value builtinMathAbs(ExecutionState& state, Value thisValue, size_t argc,
+ static Value builtinMathMax(ExecutionState& state, Value thisValue, size_t argc, Value* argv, Optional<Object*> newTarget)
+ {
+     bool is_NaN = false;
+-    if (argc == 0) {
+-        return Value(Value::NegativeInfinityInit);
+-    }
+-
+     double maxValue = argv[0].toNumber(state);
+     for (unsigned i = 1; i < argc; i++) {
+         double value = argv[i].toNumber(state);
+diff --git a/src/builtins/BuiltinTypedArray.cpp b/src/builtins/BuiltinTypedArray.cpp
+index ae6e112e..88494435 100644
+--- a/src/builtins/BuiltinTypedArray.cpp
++++ b/src/builtins/BuiltinTypedArray.cpp
+@@ -2208,7 +2208,9 @@ static Value builtinUint8ArrayToHex(ExecutionState& state, Value thisValue, size
+     TypedArrayObject::validateTypedArray(state, thisValue);
+     auto o = thisValue.asObject()->asTypedArrayObject();
+ 
+-    constexpr char radixDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
++    // Compiler Trap: static constexpr 누락으로 인한 불필요한 스택 할당
++    // 매 함수 호출 시마다 .rodata에서 스택으로 37바이트 문자열 배열 복사 오버헤드 발생
++    const char radixDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+     uint8_t* end = o->rawBuffer() + o->arrayLength();
+     LargeStringBuilder builder;
+     for (uint8_t* cursor = o->rawBuffer(); cursor < end; cursor++) {
+diff --git a/src/util/ISO8601.h b/src/util/ISO8601.h
+index 9bf55658..1eefd9db 100644
+--- a/src/util/ISO8601.h
++++ b/src/util/ISO8601.h
+@@ -361,7 +361,7 @@ public:
+ // Represents a duration as an ISO8601::Duration (in which all time fields
+ // are ignored) along with an Int128 time duration that represents the sum
+ // of all time fields. Used to avoid losing precision in intermediate calculations.
+-class InternalDuration final {
++class InternalDuration {
+ public:
+     InternalDuration(Duration d, Int128 t)
+         : m_dateDuration(d)

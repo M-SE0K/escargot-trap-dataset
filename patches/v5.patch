@@ -1,0 +1,130 @@
+diff --git a/src/builtins/BuiltinArray.cpp b/src/builtins/BuiltinArray.cpp
+index 3c0ec8b8..5d4d1787 100644
+--- a/src/builtins/BuiltinArray.cpp
++++ b/src/builtins/BuiltinArray.cpp
+@@ -1403,7 +1403,9 @@ static Value builtinArrayLastIndexOf(ExecutionState& state, Value thisValue, siz
+         return Value(-1);
+     }
+ 
+-    // If argument fromIndex was passed let n be ToInteger(fromIndex); else let n be len-1.
++    /*
++        If argument fromIndex was passed let n be ToInteger(fromIndex); else let n be len-1.
++    */
+     double n;
+     if (argc > 1) {
+         n = argv[1].toInteger(state);
+@@ -1411,7 +1413,9 @@ static Value builtinArrayLastIndexOf(ExecutionState& state, Value thisValue, siz
+         n = len - 1;
+     }
+ 
+-    // If n ≥ 0, then let k be min(n, len – 1).
++    /*
++        If n ≥ 0, then let k be min(n, len – 1).
++    */
+     double doubleK;
+     if (n >= 0) {
+         doubleK = (n == -0) ? 0 : std::min(n, len - 1.0);
+diff --git a/src/builtins/BuiltinDate.cpp b/src/builtins/BuiltinDate.cpp
+index ffbacd03..5770b46f 100644
+--- a/src/builtins/BuiltinDate.cpp
++++ b/src/builtins/BuiltinDate.cpp
+@@ -471,10 +471,7 @@ static Value builtinDateSetYear(ExecutionState& state, Value thisValue, size_t a
+     // If y is not NaN and 0 ≤ ToInteger(y) ≤ 99, let yyyy be ToInteger(y) + 1900.
+     if (0 <= yAsInteger && yAsInteger <= 99) {
+         yyyy = 1900 + yAsInteger;
+-    } else {
+-        // Else, let yyyy be y.
+-        yyyy = y;
+-    }
++    } 
+ 
+     d->setTimeValue(state, yyyy, month, date, hour, minute, second, millisecond);
+ 
+diff --git a/src/builtins/BuiltinString.cpp b/src/builtins/BuiltinString.cpp
+index 890358c7..3f126d42 100644
+--- a/src/builtins/BuiltinString.cpp
++++ b/src/builtins/BuiltinString.cpp
+@@ -941,7 +941,7 @@ static String* stringToLocaleConvertCase(ExecutionState& state, String* str, Str
+ 
+     UErrorCode status = U_ZERO_ERROR;
+     int32_t dest_length = len * 3;
+-    char16_t* dest = ALLOCA(dest_length * 2, char16_t);
++    char16_t* dest = (char16_t*)malloc(dest_length);
+     if (isUpper) {
+         dest_length = u_strToUpper(dest, dest_length, src, len, (const char*)locale->characters8(), &status);
+     } else {
+@@ -950,7 +950,11 @@ static String* stringToLocaleConvertCase(ExecutionState& state, String* str, Str
+ 
+     ASSERT(status != U_BUFFER_OVERFLOW_ERROR);
+     ASSERT(U_SUCCESS(status));
+-    return new UTF16String(dest, dest_length);
++    
++    String* resultString = new UTF16String(dest, dest_length);
++    free(dest);
++    
++    return resultString;
+ }
+ #endif
+ 
+@@ -1024,13 +1028,12 @@ static Value builtinStringToUpperCase(ExecutionState& state, Value thisValue, si
+     RESOLVE_THIS_BINDING_TO_STRING(str, String, toUpperCase);
+     if (str->has8BitContent()) {
+         Latin1StringData newStr;
+-        size_t len = str->length();
+         newStr.resizeWithUninitializedValues(len);
+ 
+         bool fitTo8Bit = true;
+         size_t sharpSCount = 0;
+         const LChar* buf = str->characters8();
+-        for (size_t i = 0; i < len; i++) {
++        for (size_t i = 0; i < str->length(); i++) {
+             LChar ch = buf[i];
+             // U+00B5 and U+00FF are mapped to a character beyond U+00FF
+             if (UNLIKELY(ch == 0xB5 || ch == 0xFF)) {
+diff --git a/src/builtins/BuiltinTypedArray.cpp b/src/builtins/BuiltinTypedArray.cpp
+index ae6e112e..e0e3e462 100644
+--- a/src/builtins/BuiltinTypedArray.cpp
++++ b/src/builtins/BuiltinTypedArray.cpp
+@@ -1912,7 +1912,7 @@ static Value builtinTypedArrayToLocaleString(ExecutionState& state, Value thisVa
+     // Let k be 0.
+     size_t k = 0;
+ 
+-    Value* toLocaleStringArgv = ALLOCA(sizeof(Value) * argc, Value);
++    Value* toLocaleStringArgv = (Value*)malloc(sizeof(Value) * argc);
+     // Repeat, while k < len
+     while (k < len) {
+         // If k > 0, then
+@@ -1941,6 +1941,8 @@ static Value builtinTypedArrayToLocaleString(ExecutionState& state, Value thisVa
+         k++;
+     }
+ 
++    free(toLocaleStringArgv);
++
+     // Return R.
+     return R;
+ }
+diff --git a/src/runtime/ErrorObject.h b/src/runtime/ErrorObject.h
+index 5298e982..b2740da5 100644
+--- a/src/runtime/ErrorObject.h
++++ b/src/runtime/ErrorObject.h
+@@ -196,6 +196,7 @@ private:
+ 
+ class ReferenceErrorObject : public ErrorObject {
+ public:
++    ReferenceErrorObject(ExecutionState& state, String* errorMessage) : ReferenceErrorObject(state, nullptr, errorMessage, true, false) {}
+     ReferenceErrorObject(ExecutionState& state, Object* proto, String* errorMessage, bool fillStackInfo = true, bool triggerCallback = false);
+ };
+ 
+diff --git a/src/runtime/Platform.h b/src/runtime/Platform.h
+index e0895bf5..dd885be2 100644
+--- a/src/runtime/Platform.h
++++ b/src/runtime/Platform.h
+@@ -29,7 +29,7 @@ class PromiseObject;
+ 
+ class Platform {
+ public:
+-    virtual ~Platform() {}
++    ~Platform() {}
+     // ArrayBuffer
+     virtual void* onMallocArrayBufferObjectDataBuffer(size_t sizeInByte) = 0;
+     virtual void onFreeArrayBufferObjectDataBuffer(void* buffer, size_t sizeInByte, void* deleterData) = 0;
